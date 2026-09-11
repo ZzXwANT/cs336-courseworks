@@ -2,6 +2,7 @@ import os
 import regex as re
 from typing import BinaryIO
 from collections import Counter
+from multiprocessing import Pool
 
 # GPT-2匹配
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
@@ -16,33 +17,50 @@ def pre_tokenization(input_path: str | os.PathLike,
     
     if special_tokens is None:
         special_tokens = []
-
+    
+    # 只处理第一个ST
+    sToken = special_tokens[0]
+    pattern = re.escape(sToken) # 需要使用 re.escape 来转义特殊字符，如 <, >, | 等
+    # 处理所有ST
+    # pattern = "|".join(re.escape(st) for st in special_tokens)
+    
+    # 多线程处理文本
     with open(input_path, "rb") as f:
-        # 只处理第一个ST
-        sToken = special_tokens[0]
-        pattern = re.escape(sToken)
+        boundaries = find_chunk_boundaries(f, num_processes, sToken.encode("utf-8"))
         
-        # 处理所有ST
-        # pattern = "|".join(re.escape(st) for st in special_tokens)
+    tasks = [
+        (input_path, start, end, pattern)
+        for start, end in zip(boundaries[:-1], boundaries[1:])
+    ]
+    
+    with Pool(processes=num_processes) as pool:
+        results = pool.starmap(_pre_tokenization_worker, tasks)
         
-        # 多线程处理文本, 以special_tokens分隔
-        boundaries = find_chunk_boundaries(f, num_processes,   sToken.encode("utf-8"))  # 字节级分块
+    total_counts = Counter()
+    for chunk_counts in results:
+        total_counts.update(chunk_counts)
         
-        # 字节级文本容器
-        counts = Counter()
+    return total_counts
 
-        # zip配对
-        for start, end in zip(boundaries[:-1], boundaries[1:]):
-            f.seek(start)
-            # 解码成字符
-            chunk_str = f.read(end - start).decode("utf-8", errors="ignore")
-            segments = re.split(pattern, chunk_str)
-            
-            for seg in segments:
-                for m in re.finditer(PAT, seg):
-                    token_bytes = m.group().encode("utf-8")
-                    # 查表统计(counter类方便统计)
-                    counts[tuple(BYTE_LOOKUP[b] for b in token_bytes)] +=1
+def _pre_tokenization_worker(input_path, start, end, pattern):
+    """子进程 worker：独立打开文件，只读取 [start, end) 范围并统计词频"""
+    # 字节级文本容器
+    counts = Counter()
+    
+    with open(input_path, "rb") as f:
+        f.seek(start)
+        # 解码成字符
+        chunk_str = f.read(end - start).decode("utf-8", errors="ignore")
+        
+    # 以special_tokens分割文本
+    segments = re.split(pattern, chunk_str)
+    
+    for seg in segments:
+        for m in re.finditer(PAT, seg):
+            token_bytes = m.group().encode("utf-8")
+            # 查表统计(counter类方便统计)
+            counts[tuple(BYTE_LOOKUP[b] for b in token_bytes)] +=1
+                
     return counts
 
 def find_chunk_boundaries(
@@ -100,7 +118,7 @@ if __name__ == "__main__":
     from pathlib import Path
     
     # 指向 fixtures 中的 corpus.en
-    corpus_path = Path(__file__).resolve().parent.parent / "fixtures" / "corpus.en"
+    corpus_path = Path(__file__).resolve().parent.parent.parent.parent /"original-llm" /"assignment1-basics" /"tests" / "fixtures" / "corpus.en"
     
     print(f"Testing pre_tokenization with: {corpus_path}")
     counts = pre_tokenization(
