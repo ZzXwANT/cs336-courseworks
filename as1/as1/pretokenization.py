@@ -14,7 +14,9 @@ def pre_tokenization(input_path: str | os.PathLike,
                     num_processes: int = 4,
                     special_tokens: list[str] = ["<|endoftext|>"]
 ) -> Counter:
-    
+    """
+    对输入文本进行预分词，返回一个 Counter，键为 tuple[bytes, ...]，值为频率。
+    """
     if special_tokens is None:
         special_tokens = []
     
@@ -60,7 +62,7 @@ def _pre_tokenization_worker(input_path, start, end, pattern):
             token_bytes = m.group().encode("utf-8")
             # 查表统计(counter类方便统计)
             counts[tuple(BYTE_LOOKUP[b] for b in token_bytes)] +=1
-                
+            
     return counts
 
 def find_chunk_boundaries(
