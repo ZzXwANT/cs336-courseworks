@@ -3,7 +3,7 @@ from pathlib import Path
 import json
 import time
 import tracemalloc
-from tests.common import gpt2_bytes_to_unicode
+from as1.common import gpt2_bytes_to_unicode
 
 DATA_PATH = Path("/Users/mac/proj/CS336/original-llm/assignment1-basics/cs336_basics/data/TinyStoriesV2-GPT4-train.txt")
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
@@ -29,14 +29,15 @@ if __name__ == "__main__":
 
     # 获取 256 字节到 unicode 字符串的映射字典
     byte_encoder = gpt2_bytes_to_unicode()
-    
     vocab_save = {idx: "".join(byte_encoder[b] for b in token) for idx, token in vocab.items()}
-    
     with open(OUTPUT_DIR / "vocab.json", "w", encoding="utf-8") as f:
         json.dump(vocab_save, f, ensure_ascii=False, indent=4)
         
-    merges_save = [f"{token1.decode('utf-8', errors='ignore')} {token2.decode('utf-8', errors='ignore')}" for token1, token2 in merges]
-    
+    # 修复了 merge 的保存方式，确保每个 token 都是可读的 unicode 字符串
+    merges_save = [
+        f"{''.join(byte_encoder[b] for b in token1)} {''.join(byte_encoder[b] for b in token2)}"
+        for token1, token2 in merges
+    ]
     with open(OUTPUT_DIR / "merges.txt", "w", encoding="utf-8") as f:
         f.write("\n".join(merges_save))
     
